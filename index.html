@@ -3,138 +3,73 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FIFA Agent Pro</title>
+    <title>FIFA Agent Pro - IA Study</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-    </style>
 </head>
-<body class="bg-slate-50">
+<body>
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
-        // Sacamos los iconos de Lucide de forma compatible
-        const { 
-            CheckCircle, XCircle, ChevronRight, RotateCcw, 
-            BookOpen, AlertCircle, Trophy, Home, Filter, 
-            Sparkles, MessageSquare, BrainCircuit, Loader2 
-        } = lucide;
 
-        // La API KEY se lee de las variables de Vercel que configuraste
-        const apiKey = "TU_API_KEY_AQUI"; // Si no funciona, pegaremos la AIza... aquí directamente
-
-        async function callGemini(prompt, systemInstruction = "") {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-            const payload = {
-                contents: [{ parts: [{ text: prompt }] }],
-                systemInstruction: { parts: [{ text: systemInstruction }] }
-            };
-
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const data = await response.json();
-                return data.candidates?.[0]?.content?.parts?.[0]?.text;
-            } catch (error) {
-                return "Error al conectar con el Tutor ✨";
-            }
-        }
+        // CONFIGURACIÓN: PEGA TU API KEY AQUÍ ABAJO
+        const GEMINI_API_KEY = "AIzaSyCE2aik2p9xdHerBjadqVeb_iJH3QjaD9U"; 
 
         const QUESTIONS_DATA = [
             {
                 id: 1,
-                question: "¿Cuáles de los siguientes requisitos de elegibilidad se aplican a un candidato que solicita una licencia de agente de fútbol de la FIFA?",
-                options: ["No haber sido declarado culpable por delitos graves.", "No estar inhabilitado por una autoridad deportiva.", "No poseer intereses en apuestas deportivas.", "No haber sido declarado en quiebra personal."],
+                question: "¿Cuáles de los siguientes requisitos se aplican a un candidato a agente FIFA?",
+                options: ["No antecedentes penales graves", "No estar inhabilitado", "No intereses en apuestas", "No haber estado en quiebra"],
                 correctIndices: [0, 1, 2],
-                page: "Art. 4, FFAR",
-                rationale: "Los requisitos incluyen antecedentes penales limpios e integridad deportiva."
+                rationale: "El Art. 4 del FFAR exige integridad y limpieza de antecedentes penales."
             },
             {
-                id: 9,
-                question: "Un agente representa a un jugador con salario de 150.000 USD. ¿Cuál es el límite máximo de comisión?",
-                options: ["3% del salario.", "5% del salario.", "10% del salario.", "No hay límite."],
+                id: 2,
+                question: "Límite de comisión para salario menor a 200.000 USD:",
+                options: ["3%", "5%", "10%", "No hay"],
                 correctIndices: [1],
-                page: "Art. 15.2, FFAR",
-                rationale: "Por debajo de 200k USD, el límite es del 5%."
+                rationale: "Según el Art. 15.2, el límite es del 5% para salarios bajos."
             }
+            // Aquí puedes añadir las 60 preguntas siguiendo este formato
         ];
 
         function App() {
             const [view, setView] = useState('home');
-            const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-            const [selectedOptions, setSelectedOptions] = useState([]);
-            const [showFeedback, setShowFeedback] = useState(false);
             const [score, setScore] = useState(0);
-            const [quizQuestions, setQuizQuestions] = useState([]);
-            const [aiLoading, setAiLoading] = useState(false);
-            const [aiResponse, setAiResponse] = useState("");
-            const [caseStudy, setCaseStudy] = useState(null);
 
-            const startQuiz = () => {
-                setQuizQuestions([...QUESTIONS_DATA]);
-                setView('quiz');
-                setCurrentQuestionIndex(0);
-                setScore(0);
-                setSelectedOptions([]);
-                setShowFeedback(false);
-            };
-
-            if (view === 'home') {
-                return (
-                    <div className="min-h-screen flex items-center justify-center p-4">
-                        <div className="max-w-2xl w-full bg-white rounded-[2rem] shadow-2xl overflow-hidden text-center p-10">
-                            <h1 className="text-4xl font-black text-indigo-700 mb-6 italic">FIFA AGENT PRO</h1>
-                            <button onClick={startQuiz} className="w-full bg-indigo-600 text-white font-bold py-5 rounded-2xl mb-4 hover:bg-indigo-700 transition-all">
-                                Empezar Test de Práctica
-                            </button>
-                            <p className="text-slate-400 text-sm uppercase tracking-widest">Preparación para el examen 2026</p>
-                        </div>
-                    </div>
-                );
-            }
-
-            if (view === 'quiz') {
-                const currentQuestion = quizQuestions[currentQuestionIndex];
-                return (
-                    <div className="min-h-screen p-6 flex flex-col items-center">
-                        <div className="max-w-4xl w-full bg-white rounded-[2rem] shadow-xl p-10">
-                            <h2 className="text-2xl font-bold mb-8">{currentQuestion.question}</h2>
-                            <div className="space-y-3">
-                                {currentQuestion.options.map((option, idx) => (
-                                    <button 
-                                        key={idx}
-                                        onClick={() => setSelectedOptions([idx])}
-                                        className={`w-full p-4 text-left rounded-xl border-2 ${selectedOptions.includes(idx) ? 'border-indigo-600 bg-indigo-50' : 'border-slate-100'}`}
-                                    >
-                                        {option}
-                                    </button>
-                                ))}
+            return (
+                <div className="min-h-screen bg-slate-50 font-sans flex items-center justify-center p-4">
+                    <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl overflow-hidden p-10 text-center">
+                        <h1 className="text-3xl font-black text-indigo-700 mb-6 italic">FIFA AGENT PRO</h1>
+                        
+                        {view === 'home' ? (
+                            <div className="space-y-4">
+                                <p className="text-slate-500 mb-6">Tu tutor inteligente para el examen 2026</p>
+                                <button onClick={() => setView('quiz')} className="w-full bg-indigo-600 text-white font-bold py-5 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg">
+                                    Empezar Test
+                                </button>
+                                <div className="text-xs text-slate-400 uppercase tracking-widest pt-4">Powered by Gemini AI</div>
                             </div>
-                            <button 
-                                onClick={() => setView('home')}
-                                className="mt-8 text-slate-400 font-bold"
-                            >
-                                Volver al Inicio
-                            </button>
-                        </div>
+                        ) : (
+                            <div>
+                                <p className="text-lg font-bold">¡Test en construcción!</p>
+                                <button onClick={() => setView('home')} className="mt-4 text-indigo-600 underline">Volver</button>
+                            </div>
+                        )}
                     </div>
-                );
-            }
-
-            return null;
+                </div>
+            );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
+        
+        // Inicializar iconos
+        setTimeout(() => lucide.createIcons(), 500);
     </script>
 </body>
 </html>
