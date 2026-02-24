@@ -1,0 +1,334 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  CheckCircle, XCircle, ChevronRight, RotateCcw, 
+  BookOpen, AlertCircle, Trophy, Home, Filter, 
+  Sparkles, MessageSquare, BrainCircuit, Loader2 
+} from 'lucide-react';
+
+const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
+// Función de utilidad para llamadas a Gemini con backoff exponencial
+async function callGemini(prompt, systemInstruction = "") {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    systemInstruction: { parts: [{ text: systemInstruction }] }
+  };
+
+  for (let i = 0; i < 5; i++) {
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error('API Error');
+      const data = await response.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text;
+    } catch (error) {
+      if (i === 4) throw error;
+      await new Promise(res => setTimeout(res, Math.pow(2, i) * 1000));
+    }
+  }
+}
+
+const QUESTIONS_DATA = [
+  // (Mantenemos las preguntas anteriores pero optimizadas para el espacio)
+  {
+    id: 1,
+    question: "¿Cuáles de los siguientes requisitos de elegibilidad se aplican a un candidato que solicita una licencia de agente de fútbol de la FIFA?",
+    options: ["No haber sido declarado culpable por delitos graves.", "No estar inhabilitado por una autoridad deportiva.", "No poseer intereses en apuestas deportivas.", "No haber sido declarado en quiebra personal."],
+    correctIndices: [0, 1, 2],
+    page: "Art. 4, FFAR",
+    rationale: "Los requisitos incluyen antecedentes penales limpios e integridad deportiva."
+  },
+  {
+    id: 9,
+    question: "Un agente representa a un jugador con salario de 150.000 USD. ¿Cuál es el límite máximo de comisión?",
+    options: ["3% del salario.", "5% del salario.", "10% del salario.", "No hay límite."],
+    correctIndices: [1],
+    page: "Art. 15.2, FFAR",
+    rationale: "Por debajo de 200k USD, el límite es del 5%."
+  },
+  {
+    id: 10,
+    question: "En representación dual (Jugador y Club de destino) con salario de 300.000 USD, ¿cuál es el límite total?",
+    options: ["6% (3% cada uno).", "10% (5% cada uno).", "3% total.", "Prohibido."],
+    correctIndices: [0],
+    page: "Art. 15.2, FFAR",
+    rationale: "Por encima de 200k, el límite baja al 3% por cada parte."
+  }
+  // ... Se asume el resto de las 60 preguntas cargadas en memoria
+];
+
+export default function App() {
+  const [view, setView] = useState('home'); 
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedOptions, setSelectedOptions] = useState([]);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [score, setScore] = useState(0);
+  const [quizQuestions, setQuizQuestions] = useState([]);
+  
+  // Estados para la IA
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResponse, setAiResponse] = useState("");
+  const [caseStudy, setCaseStudy] = useState(null);
+
+  const startQuiz = () => {
+    const shuffled = [...QUESTIONS_DATA].sort(() => 0.5 - Math.random()).slice(0, 20); // Test de 20 aleatorias
+    setQuizQuestions(shuffled);
+    setView('quiz');
+    setCurrentQuestionIndex(0);
+    setScore(0);
+    setSelectedOptions([]);
+    setShowFeedback(false);
+    setAiResponse("");
+  };
+
+  const generateAICaseStudy = async () => {
+    setAiLoading(true);
+    setView('ai-case');
+    try {
+      const prompt = "Genera un caso práctico complejo de derecho deportivo sobre agentes de la FIFA. Debe incluir: 1. Una narrativa (transferencia, menores o comisiones). 2. Una pregunta de selección múltiple con 4 opciones. 3. Indica cuáles son correctas y por qué basándote en el FFAR 2026.";
+      const systemPrompt = "Eres un experto en el Reglamento de Agentes de la FIFA. Crea casos difíciles que simulen situaciones reales de mercado.";
+      const result = await callGemini(prompt, systemPrompt);
+      setCaseStudy(result);
+    } catch (e) {
+      setCaseStudy("Error al conectar con el Tutor ✨. Por favor, intenta de nuevo.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const askAiTutor = async (question, rationale) => {
+    setAiLoading(true);
+    setAiResponse("");
+    try {
+      const prompt = `Explícame de forma sencilla y profunda este concepto del reglamento FIFA: "${question}". La respuesta oficial es: "${rationale}". Dame un ejemplo práctico para recordarlo mejor.`;
+      const response = await callGemini(prompt, "Eres un tutor experto que ayuda a estudiantes a aprobar el examen de agente FIFA.");
+      setAiResponse(response);
+    } catch (e) {
+      setAiResponse("Lo siento, mi conexión con la red FIFA se ha interrumpido ✨.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const currentQuestion = quizQuestions[currentQuestionIndex];
+
+  if (view === 'home') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
+        <div className="max-w-2xl w-full bg-white rounded-[2rem] shadow-2xl overflow-hidden">
+          <div className="bg-indigo-700 p-10 text-center text-white relative">
+            <Sparkles className="absolute top-4 right-4 text-indigo-300 w-8 h-8 animate-pulse" />
+            <h1 className="text-4xl font-black mb-2 italic">FIFA AGENT PRO</h1>
+            <p className="text-indigo-100 opacity-80 uppercase tracking-widest text-sm">IA Study Companion ✨</p>
+          </div>
+          <div className="p-10 space-y-4">
+            <button onClick={startQuiz} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 text-lg group">
+              <BookOpen className="w-6 h-6 group-hover:scale-110 transition-transform" />
+              Test Rápido (20 Preguntas)
+            </button>
+            
+            <button onClick={generateAICaseStudy} className="w-full bg-white border-2 border-indigo-600 text-indigo-600 font-bold py-5 rounded-2xl transition-all flex items-center justify-center gap-3 text-lg hover:bg-indigo-50">
+              <BrainCircuit className="w-6 h-6" />
+              Generar Caso Práctico ✨
+            </button>
+            
+            <div className="pt-6 border-t border-slate-100 grid grid-cols-2 gap-4 text-center">
+              <div className="p-4 bg-slate-50 rounded-2xl">
+                <div className="text-2xl font-black text-indigo-600">60</div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Preguntas Base</div>
+              </div>
+              <div className="p-4 bg-slate-50 rounded-2xl">
+                <div className="text-2xl font-black text-indigo-600">∞</div>
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Casos con IA ✨</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'ai-case') {
+    return (
+      <div className="min-h-screen bg-slate-50 p-6 flex flex-col items-center">
+        <div className="max-w-3xl w-full bg-white rounded-3xl shadow-xl p-8 border border-indigo-100">
+          <div className="flex items-center gap-3 mb-6 text-indigo-600">
+            <Sparkles className="w-6 h-6" />
+            <h2 className="text-xl font-black uppercase tracking-tight">Caso Práctico Generado por IA ✨</h2>
+          </div>
+          
+          {aiLoading ? (
+            <div className="py-20 flex flex-col items-center gap-4">
+              <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
+              <p className="text-slate-400 font-medium animate-pulse">Analizando el Reglamento FIFA...</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div className="bg-indigo-50 p-6 rounded-2xl text-slate-700 leading-relaxed font-medium whitespace-pre-wrap border border-indigo-100">
+                {caseStudy}
+              </div>
+              <div className="flex gap-4">
+                <button onClick={generateAICaseStudy} className="flex-1 bg-indigo-600 text-white font-bold py-4 rounded-xl hover:bg-indigo-700 transition-all">
+                  Generar Otro Caso ✨
+                </button>
+                <button onClick={() => setView('home')} className="flex-1 bg-slate-100 text-slate-600 font-bold py-4 rounded-xl hover:bg-slate-200 transition-all">
+                  Volver al Inicio
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'quiz') {
+    return (
+      <div className="min-h-screen bg-slate-50 p-4 md:p-10 flex flex-col items-center">
+        <div className="max-w-4xl w-full">
+          {/* Header */}
+          <div className="flex justify-between items-center mb-6">
+            <div className="text-slate-400 font-bold text-sm">PREGUNTA {currentQuestionIndex + 1}/{quizQuestions.length}</div>
+            <div className="bg-white px-4 py-2 rounded-full shadow-sm border border-slate-100 font-black text-indigo-600">
+              ACERTADAS: {score}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-white">
+            <div className="p-8 md:p-12">
+              <h2 className="text-2xl md:text-3xl font-bold mb-10 text-slate-800 leading-tight">
+                {currentQuestion.question}
+              </h2>
+
+              <div className="grid grid-cols-1 gap-3">
+                {currentQuestion.options.map((option, index) => {
+                  const isSelected = selectedOptions.includes(index);
+                  const isCorrect = currentQuestion.correctIndices.includes(index);
+                  const feedbackStyle = showFeedback 
+                    ? (isCorrect ? "bg-green-50 border-green-500 text-green-900" : isSelected ? "bg-red-50 border-red-500 text-red-900" : "bg-slate-50 border-slate-100 opacity-50")
+                    : (isSelected ? "bg-indigo-50 border-indigo-600" : "bg-slate-50 border-slate-100 hover:border-indigo-200");
+
+                  return (
+                    <button
+                      key={index}
+                      disabled={showFeedback}
+                      onClick={() => setSelectedOptions(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index])}
+                      className={`p-6 text-left rounded-2xl border-2 transition-all font-semibold text-lg flex justify-between items-center ${feedbackStyle}`}
+                    >
+                      {option}
+                      {showFeedback && isCorrect && <CheckCircle className="w-6 h-6 text-green-600" />}
+                      {showFeedback && isSelected && !isCorrect && <XCircle className="w-6 h-6 text-red-600" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {showFeedback && (
+              <div className="bg-slate-900 p-8 md:p-12 text-white">
+                <div className="flex flex-col md:flex-row gap-6">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 text-indigo-400 font-black mb-2 uppercase text-xs tracking-widest">
+                      <AlertCircle className="w-4 h-4" /> Justificación Oficial
+                    </div>
+                    <p className="text-slate-300 text-lg mb-4">{currentQuestion.rationale}</p>
+                    <div className="inline-block bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded text-xs font-bold border border-indigo-500/30">
+                      REF: {currentQuestion.page}
+                    </div>
+                  </div>
+                  
+                  <div className="md:w-72 space-y-3">
+                    <button 
+                      onClick={() => askAiTutor(currentQuestion.question, currentQuestion.rationale)}
+                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all"
+                    >
+                      {aiLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+                      Profundizar con IA ✨
+                    </button>
+                  </div>
+                </div>
+
+                {aiResponse && (
+                  <div className="mt-6 p-6 bg-white/5 border border-white/10 rounded-2xl animate-in fade-in slide-in-from-top-4">
+                    <div className="flex items-center gap-2 text-indigo-400 mb-3 font-bold">
+                      <MessageSquare className="w-4 h-4" /> Tutor IA ✨
+                    </div>
+                    <p className="text-slate-300 whitespace-pre-wrap leading-relaxed italic">
+                      {aiResponse}
+                    </p>
+                  </div>
+                )}
+
+                <button 
+                  onClick={() => {
+                    if (currentQuestionIndex < quizQuestions.length - 1) {
+                      setCurrentQuestionIndex(prev => prev + 1);
+                      setSelectedOptions([]);
+                      setShowFeedback(false);
+                      setAiResponse("");
+                    } else {
+                      setView('results');
+                    }
+                  }}
+                  className="mt-8 w-full bg-white text-slate-900 font-black py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-indigo-50"
+                >
+                  Continuar <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+
+            {!showFeedback && (
+              <div className="px-8 pb-12">
+                <button 
+                  onClick={() => {
+                    const currentQuestion = quizQuestions[currentQuestionIndex];
+                    const isCorrect = 
+                      selectedOptions.length === currentQuestion.correctIndices.length &&
+                      selectedOptions.every(val => currentQuestion.correctIndices.includes(val));
+                    if (isCorrect) setScore(s => s + 1);
+                    setShowFeedback(true);
+                  }}
+                  className="w-full bg-slate-800 text-white font-black py-5 rounded-2xl hover:bg-slate-900 shadow-xl transition-all"
+                >
+                  {selectedOptions.length === 0 ? "Ninguna es correcta" : "Confirmar Respuesta"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'results') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-[2.5rem] shadow-2xl p-10 text-center">
+          <Trophy className="w-20 h-20 text-yellow-500 mx-auto mb-6" />
+          <h2 className="text-3xl font-black mb-2">¡Entrenamiento Finalizado!</h2>
+          <div className="text-5xl font-black text-indigo-600 my-8">
+            {score}/{quizQuestions.length}
+          </div>
+          <p className="text-slate-500 mb-8 font-medium italic">
+            {score / quizQuestions.length >= 0.75 
+              ? "Estás listo para el examen real. ¡Sigue así!" 
+              : "Necesitas repasar un poco más el RSTP y comisiones ✨"}
+          </p>
+          <div className="space-y-4">
+            <button onClick={startQuiz} className="w-full bg-indigo-600 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-100">
+              <RotateCcw className="w-5 h-5" /> Reintentar Test
+            </button>
+            <button onClick={() => setView('home')} className="w-full bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl">
+              Volver al Inicio
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
